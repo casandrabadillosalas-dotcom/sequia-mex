@@ -1,0 +1,405 @@
+---
+title: "sequía en mexico"
+format: html
+editor: visual
+---
+
+
+```{r}
+library(readxl)
+datos <- read_excel("MunicipiosSequia.xlsx")
+```
+
+```{r}
+head(datos)
+```
+
+
+```{r}
+dim(datos)
+```
+
+
+```{r}
+#nombres de columnas
+names(datos)
+```
+```{r}
+head(names(datos), 15)
+```
+
+```{r}
+tail(names(datos), 15)
+```
+```{r}
+str(datos[, 1:15])
+```
+```{r}
+sum(!is.na(datos$`37652`))
+```
+```{r}
+sum(!is.na(datos$`37680`))
+```
+```{r}
+tail(names(datos), 10)
+```
+```{r}
+as.Date(as.numeric("46280"), origin = "1899-12-30")
+```
+```{r}
+#convierte a fechas 
+as.Date(as.numeric(names(datos)[10:ncol(datos)]), origin = "1899-12-30")
+```
+```{r}
+#verificamos cuál es la primer medición del 2016
+which(as.Date(as.numeric(names(datos)[10:ncol(datos)]), origin = "1899-12-30") == "2016-01-15")
+```
+```{r}
+# vamos a tomar en cuenta desde el año 2016 
+names(datos)[185:195]
+```
+```{r}
+#vamos a verificar desde qué columna exactamente vamos a tomar en cuenta 
+as.Date(as.numeric(names(datos)[185:195]), origin = "1899-12-30")
+```
+```{r}
+#creamos un objeto con las 9 primeras columnas de datos
+datos_2016 <- datos[, 1:9]
+```
+
+```{r}
+#unimos el objeto anterior con la tabla datos pero desde la col 189
+# se hace una columna "fechas"
+#aquí a esas 9 columnas de identificación, se agrega únicamente las columnas que corresponden a 2016 en adelante
+datos_2016 <- cbind(
+  datos_2016,
+  datos[, 189:ncol(datos)]
+)
+```
+
+```{r}
+dim(datos_2016)
+```
+```{r}
+fechas <- as.Date(
+  as.numeric(names(datos_2016)[10:ncol(datos_2016)]),
+  origin = "1899-12-30"
+)
+
+head(fechas)
+```
+```{r}
+#cambiamos los encabezados para que nos dé fechas "normales o reales"
+names(datos_2016)[10:ncol(datos_2016)] <- as.character(fechas)
+```
+
+```{r}
+#verificamos (primeras 6 columnas) que se dió el cambio correctamente 
+names(datos_2016)[10:15]
+```
+
+```{r}
+unique(unlist(datos_2016[, 10:ncol(datos_2016)]))
+```
+```{r}
+library(tidyr)
+```
+
+
+```{r}
+# pivot_longer reorganiza los datos es la forma tidy que facilita análisis y visualización
+datos_largo <- datos_2016 %>%
+  pivot_longer(
+    cols = 10:ncol(datos_2016),
+    names_to = "Fecha",
+    values_to = "Sequia"
+  )
+```
+
+```{r}
+dim(datos_largo)
+```
+```{r}
+datos_largo$Fecha <- as.Date(datos_largo$Fecha)
+```
+
+
+```{r}
+str(datos_largo$Fecha)
+```
+```{r}
+head(datos_largo)
+```
+
+```{r}
+names(datos_largo)
+```
+```{r}
+head(datos_largo[, c("Fecha", "Sequia")])
+```
+
+```{r}
+table(datos_largo$Sequia, useNA = "ifany")
+```
+
+```{r}
+#vemos cuantas fechas distintas hay 
+length(unique(datos_largo$Fecha))
+```
+```{r}
+#cuántos municipios tienen datos en cada fecha
+table(datos_largo$Fecha, useNA = "ifany")
+```
+```{r}
+#vemos para la fecha 2016 -01-15 cuántos D0:D4 y NA hay en todos los municipios 
+table(
+  datos_largo$Sequia[datos_largo$Fecha == "2016-01-15"],
+  useNA = "ifany"
+)
+```
+```{r}
+table(
+  datos_largo$Sequia[datos_largo$Fecha == "2026-09-15"],
+  useNA = "ifany"
+)
+```
+```{r}
+#no hay municipios duplicados en CVE_CONCATENADA
+sum(duplicated(datos$CVE_CONCATENADA))
+```
+```{r}
+#no haya dos registros para el mismo municipio en la misma fecha
+sum(duplicated(datos_largo[, c("CVE_CONCATENADA", "Fecha")]))
+```
+
+```{r}
+#hay 50.2 % de sin sequía
+mean(is.na(datos_largo$Sequia)) * 100
+```
+```{r}
+table(datos_largo$Fecha, is.na(datos_largo$Sequia))
+```
+
+```{r}
+datos_largo %>%
+  filter(Fecha == "2016-01-15") %>%
+  select(CVE_CONCATENADA, NOMBRE_MUN, ENTIDAD, Sequia) %>%
+  head(11)
+```
+
+```{r}
+datos_largo[datos_largo$Fecha == as.Date("2016-01-15"),
+            c("CVE_CONCATENADA", "NOMBRE_MUN", "ENTIDAD", "Sequia")][1:11, ]
+```
+
+```{r}
+library(dplyr)
+# cuántos NA por año tenemos
+NA_por_año <- datos_largo %>%
+  mutate(Año = format(Fecha, "%Y")) %>%
+  group_by(Año) %>%
+  summarise(
+    NA_sin_sequia = sum(is.na(Sequia))
+  )
+
+NA_por_año
+```
+
+```{r}
+#porcentaje de NA por años 
+NA_por_año <- datos_largo %>%
+  mutate(Año = format(Fecha, "%Y")) %>%
+  group_by(Año) %>%
+  summarise(
+    NA_sin_sequia = sum(is.na(Sequia)),
+    Total = n(),
+    Porcentaje_NA = NA_sin_sequia / Total * 100
+  )
+
+NA_por_año
+```
+
+```{r}
+#Está contando registros (filas) de datos_largo por año
+table(format(datos_largo$Fecha, "%Y"))
+```
+
+```{r}
+# vemos el porcentaje de D0:D4 y sin sequía
+tabla_sequia_año <- datos_largo %>%
+  mutate(Año = format(Fecha, "%Y")) %>%
+  count(Año, Sequia) %>%
+  group_by(Año) %>%
+  mutate(Porcentaje = n / sum(n) * 100) %>%
+  ungroup()
+
+tabla_sequia_año
+```
+
+```{r}
+# cambiamos NA por "sin sequía"
+datos_largo$Sequia <- ifelse(
+  is.na(datos_largo$Sequia),
+  "Sin Sequia",
+  datos_largo$Sequia
+)
+```
+
+```{r}
+head(datos_largo)
+```
+
+```{r}
+table(datos_largo$Sequia, useNA = "ifany")
+```
+
+
+```{r}
+#en este caso los Na = 0
+tabla_sequia_año <- datos_largo %>%
+  mutate(Año = format(Fecha, "%Y")) %>%
+  count(Año, Sequia) %>%
+  group_by(Año) %>%
+  mutate(Porcentaje = n / sum(n) * 100) %>%
+  ungroup()
+
+tabla_resumen <- tabla_sequia_año %>%
+  select(Año, Sequia, Porcentaje) %>%
+  tidyr::pivot_wider(
+    names_from = Sequia,
+    values_from = Porcentaje
+  )
+
+tabla_resumen
+```
+
+```{r}
+tabla_resumen[is.na(tabla_resumen)] <- 0
+
+tabla_resumen
+```
+
+```{r}
+#verificamos que todo sume 100%
+tabla_resumen %>%
+  mutate(Suma = D0 + D1 + D2 + D3 + D4 + `Sin Sequia`)
+```
+
+```{r}
+#hacemos una tabla para graficar por año
+tabla_grafica <- tabla_resumen %>%
+  tidyr::pivot_longer(
+    cols = -Año,
+    names_to = "Categoria",
+    values_to = "Porcentaje"
+  )
+
+tabla_grafica
+```
+
+```{r}
+tabla_grafica$Categoria <- factor(
+  tabla_grafica$Categoria,
+  levels = c("Sin Sequia", "D0", "D1", "D2", "D3", "D4")
+)
+```
+
+Análisis de la evolución temporal de la distribución de las categorías de sequía
+
+
+```{r}
+ggplot(tabla_grafica, aes(x = Año, y = Porcentaje, fill = Categoria)) +
+  geom_col() +
+  scale_fill_manual(
+    values = c(
+      "Sin Sequia" = "#BDBDBD",
+      "D0" = "#FFFF00",
+      "D1" = "#F4E4C1",
+      "D2" = "#F4A261",
+      "D3" = "#E63946",
+      "D4" = "#800020"
+    )
+  ) +
+  scale_y_continuous(
+    labels = function(x) paste0(x, "%"),
+    limits = c(0, 100)
+  ) +
+  labs(
+    x = "Año",
+    y = "Porcentaje",
+    fill = "Categoría de sequía"
+  )
+```
+
+```{r}
+#la misma gráfica pero con titulos
+ggplot(tabla_grafica, aes(x = Año, y = Porcentaje, fill = Categoria)) +
+  geom_col() +
+  scale_fill_manual(
+    values = c(
+      "Sin Sequia" = "#BDBDBD",
+      "D0" = "#FFFF00",
+      "D1" = "#F4E4C1",
+      "D2" = "#F4A261",
+      "D3" = "#E63946",
+      "D4" = "#800020"
+    )
+  ) +
+  scale_y_continuous(
+    labels = function(x) paste0(x, "%"),
+    limits = c(0, 100)
+  ) +
+  labs(
+    title = "Distribución de la intensidad de sequía por año",
+    x = "Año",
+    y = "Porcentaje de municipios",
+    fill = "Categoría de sequía",
+    caption = "Fuente: Monitor de Sequía en México, SMN-CONAGUA."
+  )
+```
+Gráfica de barras apiladas de la distribución porcentual anual.
+
+
+```{r}
+ggplot(tabla_grafica, aes(x = Año, y = Porcentaje, group = Categoria, color = Categoria)) +
+  geom_line() +
+  geom_point() +
+  scale_color_manual(
+    values = c(
+      "Sin Sequia" = "#BDBDBD",
+      "D0" = "#FFFF00",
+      "D1" = "#F4E4C1",
+      "D2" = "#F4A261",
+      "D3" = "#E63946",
+      "D4" = "#800020"
+    )
+  ) +
+  labs(
+    title = "Evolución temporal de las categorías de sequía",
+    x = "Año",
+    y = "Porcentaje de municipios",
+    color = "Categoría de sequía",
+    caption = "Fuente: Monitor de Sequia en México, SMN-CONAGUA."
+  ) +
+  scale_y_continuous(
+    labels = function(x) paste0(x, "%")
+  ) +
+  theme_classic()
+```
+
+```{r}
+serie_sequia <- tabla_resumen %>%
+  mutate(
+    Sequía = D0 + D1 + D2 + D3 + D4
+  ) %>%
+  select(Año, Sequía, `Sin Sequia`)
+serie_sequia
+```
+
+```{r}
+serie_sequia %>%
+  mutate(
+    Total = Sequía + `Sin Sequia`
+  )
+```
+
