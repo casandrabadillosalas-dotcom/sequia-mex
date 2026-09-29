@@ -403,3 +403,471 @@ serie_sequia %>%
   )
 ```
 
+```{r}
+#creamos una tabla (objeto) que contiene información que vamos a utilizar para 
+#observar la evolución temporal
+tabla_serie_sequia <- serie_sequia %>%
+  pivot_longer(
+    cols = c(Sequía, `Sin Sequia`),
+    names_to = "Estado",
+    values_to = "Porcentaje"
+  )
+```
+
+```{r}
+ggplot(
+  tabla_serie_sequia,
+  aes(
+    x = Año,
+    y = Porcentaje,
+    group = Estado,
+    color = Estado
+  )
+) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  scale_color_manual(
+    values = c(
+      "Sequía" = "#800020",
+      "Sin Sequia" = "#BDBDBD"
+    )
+  ) +
+  scale_y_continuous(
+    labels = function(x) paste0(x, "%"),
+    limits = c(0, 100)
+  ) +
+  labs(
+    title = "Evolución de la sequía en México",
+    x = "Año",
+    y = "Porcentaje de registros",
+    color = "Estado",
+    caption = "Fuente: Monitor de Sequía en México, SMN-CONAGUA."
+  ) +
+  theme_classic()
+```
+
+```{r}
+#identificar años con mayor/menor sequía
+serie_sequia %>%
+  arrange(desc(Sequía))
+```
+
+```{r}
+# cuál año fue donde se presentó mayo sequía
+año_mayor_sequia <- serie_sequia %>%
+  slice_max(Sequía, n = 1)
+
+año_mayor_sequia
+```
+
+```{r}
+#"año" (no completo) con menor sequía 
+año_menor_sequia <- serie_sequia %>%
+  slice_min(Sequía, n = 1)
+
+año_menor_sequia
+```
+
+¿Qué municipios presentan sequías con mayor frecuencia y cuáles muestran mayor persistencia?
+1. Primero: calcular la frecuencia de sequía de cada municipio, es decir:para cada municipio, qué porcentaje de sus observaciones correspondió a alguna categoría de sequía (D0–D4).
+
+CVE_CONCATENADA = identifica el municipio
+NOMBRE_NUM = nombre del municipio 
+ENTIDAD = estado 
+
+
+!!!!Frecuencia realtiva!!!!
+```{r}
+frecuencia_municipio <- datos_largo %>%
+  group_by(CVE_CONCATENADA, NOMBRE_MUN, ENTIDAD) %>%
+  summarise(
+    Total_observaciones = n(), #cuantas observaciones(registros) por municipio 
+    Observaciones_sequia = sum(Sequia != "Sin Sequia"),
+    #frecuencia relativa por municipio 
+    Porcentaje_sequia = Observaciones_sequia / Total_observaciones * 100
+  ) %>%
+  ungroup()
+```
+```{r}
+head(frecuencia_municipio)
+```
+
+```{r}
+dim(frecuencia_municipio)
+```
+
+```{r}
+# 10 municipios con los porcentajes más altos de observaciones con sequía
+frecuencia_municipio %>%
+  arrange(desc(Porcentaje_sequia)) %>%
+  head(10)
+```
+
+Son los municipios que presentan una mayor proporción de observaciones clasificadas con alguna categoría de sequía durante el periodo analizado
+
+qué tan intensa ha sido la sequía? 
+
+```{r}
+intensidad_municipio <- datos_largo %>%
+  mutate(
+    Intensidad = case_when(
+      Sequia == "Sin Sequia" ~ 0,
+      Sequia == "D0" ~ 0,
+      Sequia == "D1" ~ 1,
+      Sequia == "D2" ~ 2,
+      Sequia == "D3" ~ 3,
+      Sequia == "D4" ~ 4
+    )
+  )
+
+head(intensidad_municipio)
+
+```
+
+```{r}
+table(intensidad_municipio$Sequia,
+      intensidad_municipio$Intensidad)
+```
+
+vamos a resumir esos cientos de miles de registros para obtener una fila por municipio.
+
+!!!!intensidad!!!
+```{r}
+resumen_intensidad_municipio <- intensidad_municipio %>%
+  group_by(CVE_CONCATENADA, NOMBRE_MUN, ENTIDAD) %>%
+  summarise(
+    Intensidad_promedio = mean(Intensidad),
+    Intensidad_maxima = max(Intensidad),
+    .groups = "drop"
+  )
+head(resumen_intensidad_municipio)
+```
+
+```{r}
+dim(resumen_intensidad_municipio)
+```
+Frecuencia = ¿cuántas veces ocurrió?
+Intensidad = ¿Qué tan fuerte es cuando aparece? D0:D4 o sin sequía 
+Persistencia = ¿cuánto tiempo permanece una vez que empieza?
+```{r}
+resumen_municipio <- frecuencia_municipio %>%
+  left_join(
+    resumen_intensidad_municipio,
+    by = c("CVE_CONCATENADA", "NOMBRE_MUN", "ENTIDAD")
+  )
+```
+
+```{r}
+head(resumen_municipio)
+```
+
+```{r}
+dim(resumen_municipio)
+```
+
+```{r}
+#asegurar que solo hay un registro por municipio 
+sum(duplicated(resumen_municipio$CVE_CONCATENADA))
+```
+```{r}
+resumen_municipio %>%
+  arrange(desc(Porcentaje_sequia)) %>%
+  head(10)
+```
+
+los municipios que presentan sequía con mayor frecuencia también tienden a presentar una mayor intensidad promedio
+
+vamos a hacer un gráfico de dispersión
+```{r}
+ggplot(
+  resumen_municipio,
+  aes(
+    x = Porcentaje_sequia,
+    y = Intensidad_promedio
+  )
+) +
+  geom_point(alpha = 0.5) +
+  labs(
+    title = "Frecuencia e intensidad de la sequía por municipio",
+    x = "Porcentaje de observaciones con sequía",
+    y = "Intensidad promedio",
+    caption = "Fuente: Monitor de Sequía en México, SMN-CONAGUA."
+  ) +
+  theme_classic()
+```
+Podemos ver una relación positiva entre frecuencia e intensidad (no implica que una cause la otra)
+calcular la correlación
+```{r}
+cor(
+  resumen_municipio$Porcentaje_sequia,
+  resumen_municipio$Intensidad_promedio
+)
+```
+```{r}
+#realiza una prueba estadística asociada
+cor.test(
+  resumen_municipio$Porcentaje_sequia,
+  resumen_municipio$Intensidad_promedio
+)
+```
+No podemos decir que una mayor frecuencia cause una mayor intensidad; solamente que ambas variables están fuertemente asociadas en estos datos.
+
+https://smn.conagua.gob.mx/es/alertamientos/79.html?utm_source=chatgpt.com
+
+Marcamos a ver si cada observación tiene sequía  
+```{r}
+datos_largo <- datos_largo %>%
+  mutate(
+    Hay_sequia = ifelse(
+      Sequia %in% c("D0", "D1", "D2", "D3", "D4"),
+      "Sequía",
+      "Sin sequía"
+    )
+  )
+```
+
+```{r}
+table(datos_largo$Hay_sequia)
+```
+```{r}
+#ejemplo con el 1er municipio de aguas
+datos_municipio_ejemplo <- datos_largo %>%
+  filter(CVE_CONCATENADA == "01001") %>%
+  arrange(Fecha) %>%
+  select(Fecha, Sequia, Hay_sequia)
+
+datos_municipio_ejemplo
+```
+
+```{r}
+datos_municipio_ejemplo <- datos_municipio_ejemplo %>%
+  mutate(
+    cambio = c(TRUE, Hay_sequia[-1] != Hay_sequia[-length(Hay_sequia)]),
+    racha = cumsum(cambio)
+  )
+
+datos_municipio_ejemplo
+```
+
+encontrar las rachas de sequía y medir cuánto duran
+pero primero vemos si funciona en un municipio para luego aplicarlo a todos los municipios 
+```{r}
+rachas_sequia_ejemplo <- datos_municipio_ejemplo %>%
+  filter(Hay_sequia == "Sequía") %>%
+  group_by(racha) %>%
+  summarise(
+    Inicio = min(Fecha),
+    Fin = max(Fecha),
+    Duracion_observaciones = n(),
+    .groups = "drop"
+  )
+
+rachas_sequia_ejemplo
+```
+Duracion_observaciones = número de fechas consecutivas en las que el municipio apareció como sequías 
+
+
+como ya vimos que funcionó para un municipio, vamos a hacerlo para los 2,478 municipios
+```{r}
+rachas_sequia_municipio <- datos_largo %>%
+  arrange(CVE_CONCATENADA, Fecha) %>%
+  group_by(CVE_CONCATENADA, NOMBRE_MUN, ENTIDAD) %>%
+
+    mutate(
+    cambio = c(
+      TRUE,
+      Hay_sequia[-1] != Hay_sequia[-length(Hay_sequia)]
+    ),
+    racha = cumsum(cambio)
+  ) %>%
+  ungroup() %>%
+  filter(Hay_sequia == "Sequía") %>%
+  group_by(
+    CVE_CONCATENADA,
+    NOMBRE_MUN,
+    ENTIDAD,
+    racha
+  ) %>%
+  summarise(
+    Inicio = min(Fecha),
+    Fin = max(Fecha),
+    Duracion_observaciones = n(),
+    .groups = "drop"
+  )
+```
+
+```{r}
+head(rachas_sequia_municipio)
+```
+
+```{r}
+nrow(rachas_sequia_municipio)
+```
+Tabla para el análisis de persistencia por municipio con una fila por municipio
+!!!Persistencia!!!
+```{r}
+resumen_persistencia <- rachas_sequia_municipio %>%
+  group_by(CVE_CONCATENADA, NOMBRE_MUN, ENTIDAD) %>%
+  summarise(
+    Numero_episodios = n(),
+    Racha_maxima = max(Duracion_observaciones),
+    Racha_promedio = mean(Duracion_observaciones),
+    .groups = "drop"
+  )
+```
+
+```{r}
+head(resumen_persistencia)
+dim(resumen_persistencia)
+```
+
+ya calculamos la frecuencia (Porcentaje_sequia), la intensidad (Intensidad_promedio e Intesidad_maxima) y la persistencia (Numero_episodios, Racha_maxima y Racha_promedio), 
+
+Este objeto (tabla) toma todos los municipios de resumen_municipio y agrega las columnas de resumen_persistenciaque corresponadn al mismo municipio (usando left_join)
+```{r}
+resumen_municipio_completo <- resumen_municipio %>%
+  left_join(
+    resumen_persistencia,
+    by = c("CVE_CONCATENADA", "NOMBRE_MUN", "ENTIDAD")
+  )
+```
+comprobamos la dimensión de la tabla. Recordemos que resumen_municipio tiene 8 columnas y se sumaron 3 columnas nuevas de persistencia
+```{r}
+dim(resumen_municipio_completo)
+```
+
+```{r}
+head(resumen_municipio_completo)
+```
+
+Ordenamos los municipios de acuerdo con Racha_maxima de mayor a menor
+Esto nos dará los 10 municipios que tuvieron el episodio consecutivo de sequía más largo durante 2016–2026
+Racha_maxima → el número máximo de observaciones consecutivas con sequía.
+Racha_promedio → duración promedio de sus episodios.
+Numero_episodios → cuántos episodios tuvo el municipio.
+```{r}
+resumen_municipio_completo %>%
+  arrange(desc(Racha_maxima)) %>%
+  select(
+    CVE_CONCATENADA,
+    NOMBRE_MUN,
+    ENTIDAD,
+    Racha_maxima,
+    Racha_promedio,
+    Numero_episodios
+  ) %>%
+  head(10)
+```
+Ciudad Valles presenta 160 periodos, por lo que vamos a identificar cuándo ocurrió 
+
+```{r}
+rachas_sequia_municipio %>%
+  semi_join(
+    resumen_municipio_completo %>%
+      arrange(desc(Racha_maxima)) %>%
+      head(10),
+    by = c("CVE_CONCATENADA", "NOMBRE_MUN", "ENTIDAD")
+  ) %>%
+  arrange(desc(Duracion_observaciones)) %>%
+  select(
+    CVE_CONCATENADA,
+    NOMBRE_MUN,
+    ENTIDAD,
+    Inicio,
+    Fin,
+    Duracion_observaciones
+  ) %>%
+  head(10)
+```
+
+```{r}
+top_10_rachas <- resumen_municipio_completo %>%
+  arrange(desc(Racha_maxima)) %>%
+  slice_head(n = 10)
+```
+
+```{r}
+ggplot(
+  top_10_rachas,
+  aes(
+    x = reorder(NOMBRE_MUN, Racha_maxima),
+    y = Racha_maxima
+  )
+) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Municipios con las rachas de sequía más prolongadas",
+    x = "Municipio",
+    y = "Número de observaciones consecutivas",
+    caption = "Fuente: Monitor de Sequía en México, SMN-CONAGUA."
+  ) +
+  theme_classic()
+```
+
+frecuencia(porcentaje_sequia) vs persistencia (Racha_maxima)
+```{r}
+ggplot(
+  resumen_municipio_completo,
+  aes(
+    x = Porcentaje_sequia,
+    y = Racha_maxima
+  )
+) +
+  geom_point(alpha = 0.5) +
+  labs(
+    title = "Frecuencia y persistencia de la sequía por municipio",
+    x = "Porcentaje de observaciones con sequía",
+    y = "Racha máxima (observaciones consecutivas)",
+    caption = "Fuente: Monitor de Sequía en México, SMN-CONAGUA."
+  ) +
+  theme_classic()
+```
+obtenemos la correlaciómn
+```{r}
+cor.test(
+  resumen_municipio_completo$Porcentaje_sequia,
+  resumen_municipio_completo$Racha_maxima
+)
+```
+esto quiere decir que los municipios que presentan sequedad o sequía con mayor frecuencia tienden también a presentar periodos consecutivos más prolongados. pero esto no demuestra que una variable cause la otra. Solo nos dice que están asociadas.
+
+Frecuencia ↔ intensidad: r = 0.826
+Frecuencia ↔ persistencia: r = 0.769
+
+Es decir, la frecuencia tiene una asociación fuerte tanto con la intensidad promedio como con la persistencia máxima.
+
+
+¿Los municipios donde la sequía alcanza mayor intensidad también tienden a tener rachas más prolongadas?
+```{r}
+cor.test(
+  resumen_municipio_completo$Intensidad_promedio,
+  resumen_municipio_completo$Racha_maxima
+)
+```
+interpretación: Existe una asociación positiva fuerte entre la intensidad promedio de la sequía y su persistencia máxima. En los municipios donde la intensidad promedio tiende a ser mayor, también tienden a observarse rachas máximas más prolongadas (asociación no significa causalidad)
+
+Los municipios con mayor presencia de sequedad o sequía tienden a presentar también mayores niveles de intensidad y periodos más prolongados de manera consecutiva
+
+
+
+
+
+Ahora vamos a verificar si los patrones se concentran en determinadas entidades o regiones
+Primero podemos resumir resumen_municipio_completo por ENTIDAD, obteniendo para cada estado:
+
+frecuencia promedio de sequía,
+intensidad promedio,
+persistencia,
+y después hacer una gráfica comparativa.
+
+qué regiones presentan mayor exposición o persistencia y cómo cambia la sequía en el tiempo.
+
+creamos una tabla donde cada fila se sea una entidad federativa (estado)
+
+
+
+
+
+
+
